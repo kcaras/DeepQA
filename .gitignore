@@ -94,3 +94,5 @@ ENV/
 # nvidia-docker-compose
 nvidia-docker-compose.yml
 
+save/model-pretrainedv2/
+save/model-opensubs/
