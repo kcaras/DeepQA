@@ -176,7 +176,7 @@ class Model:
             self.textData.getVocabularySize(),  # Both encoder and decoder have the same number of class
             embedding_size=self.args.embeddingSize,  # Dimension of each word
             output_projection=outputProjection.getWeights() if outputProjection else None,
-            feed_previous=bool(self.args.test)  # When we test (self.args.test), we use previous output as next input (feed_previous)
+            feed_previous=False  # When we test (self.args.test), we use previous output as next input (feed_previous)
         )
 
         # TODO: When the LSTM hidden size is too big, we should project the LSTM output into a smaller space (4086 => 2046): Should speed up
@@ -237,7 +237,7 @@ class Model:
         else:  # Testing (batchSize == 1)
             for i in range(self.args.maxLengthEnco):
                 feedDict[self.encoderInputs[i]]  = batch.encoderSeqs[i]
-            feedDict[self.decoderInputs[0]]  = [self.textData.goToken]
+            # feedDict[self.decoderInputs[0]]  = [self.textData.goToken]
 
             ops = (self.outputs,)
 

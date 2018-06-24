@@ -26,13 +26,17 @@ import os  # Files management
 import tensorflow as tf
 import numpy as np
 import math
+import copy
+from collections import namedtuple
+from typing import List
 
 from tqdm import tqdm  # Progress bar
 from tensorflow.python import debug as tf_debug
 
-from chatbot.textdata import TextData
+from chatbot.textdata import Batch, TextData
 from chatbot.model import Model
 
+Beam = namedtuple('Beam', ['words', 'prob'])
 
 class Chatbot:
     """
@@ -335,13 +339,22 @@ class Chatbot:
                 print('Warning: sentence too long, sorry. Maybe try a simpler sentence.')
                 continue  # Back to the beginning, try again
 
-            print('{}{}'.format(self.SENTENCES_PREFIX[1], self.textData.sequence2str(answer, clean=True)))
+            print('{}{}'.format(self.SENTENCES_PREFIX[1], self.makeCleanSentence(answer)))
 
             if self.args.verbose:
                 print(self.textData.batchSeq2str(questionSeq, clean=True, reverse=True))
                 print(self.textData.sequence2str(answer))
 
             print()
+
+    def makeCleanSentence(self, answer: List[int]) -> str:
+        """ Make a sentence out of word indices, stripping control characters.
+        Args:
+            answer: The list of word indices to convert.
+        Return:
+            A sentence corresponding to the word indices.
+        """
+        return self.textData.sequence2str(answer, clean=True)
 
     def singlePredict(self, question, questionSeq=None):
         """ Predict the sentence
@@ -359,11 +372,50 @@ class Chatbot:
             questionSeq.extend(batch.encoderSeqs)
 
         # Run the model
-        ops, feedDict = self.model.step(batch)
-        output = self.sess.run(ops[0], feedDict)  # TODO: Summarize the output too (histogram, ...)
-        answer = self.textData.deco2sentence(output)
+        answer = self.beamSearch(batch)
 
         return answer
+
+    def beamSearch(self, batch: Batch) -> List:
+        """ Run beam search to find the next response to say.
+        Args:
+            batch: The input into the chatbot.
+        Return:
+            A list of word indices corresponding to a sentence.
+        """
+        ops, feedDict = self.model.step(batch)
+
+        numBeams = 10
+        beams = [Beam([self.textData.goToken], 0)]
+
+        finished = False
+        while not finished:
+            finished = True
+            newBeams = []
+            for beam in beams:
+                if beam.words[-1] == self.textData.eosToken:
+                    newBeams.append(beam)
+                else:
+                    finished = False
+                    for i, word in enumerate(beam.words):
+                        feedDict[self.model.decoderInputs[i]] = [word]
+
+                    nextProbs = self.sess.run(ops[0][len(beam.words) - 1], feedDict)[0]
+                    bestWords = np.argpartition(nextProbs, -numBeams)[-numBeams:]
+                    for word in bestWords:
+                        newWords = copy.copy(beam.words)
+                        newWords.append(word)
+                        newBeam = Beam(newWords, beam.prob + nextProbs[word])
+                        newBeams.append(newBeam)
+            probs = [beam.prob for beam in newBeams]
+            keepProbIndices = np.argpartition(probs, -numBeams)[-numBeams:]
+            beams = []
+            for probIndex in keepProbIndices:
+                beams.append(newBeams[probIndex])
+
+        bestBeam = max(beams, key=lambda beam: beam.prob)
+
+        return bestBeam.words
 
     def daemonPredict(self, sentence):
         """ Return the answer to a given sentence (same as singlePredict() but with additional cleaning)
