@@ -237,7 +237,7 @@ class Model:
         else:  # Testing (batchSize == 1)
             for i in range(self.args.maxLengthEnco):
                 feedDict[self.encoderInputs[i]]  = batch.encoderSeqs[i]
-            # feedDict[self.decoderInputs[0]]  = [self.textData.goToken]
+            feedDict[self.decoderInputs[0]]  = [self.textData.goToken]
 
             ops = (self.outputs,)
 

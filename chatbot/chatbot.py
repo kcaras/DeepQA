@@ -27,7 +27,6 @@ import tensorflow as tf
 import numpy as np
 import math
 import copy
-from collections import namedtuple
 from typing import List
 
 from tqdm import tqdm  # Progress bar
@@ -35,8 +34,6 @@ from tensorflow.python import debug as tf_debug
 
 from chatbot.textdata import Batch, TextData
 from chatbot.model import Model
-
-Beam = namedtuple('Beam', ['words', 'prob'])
 
 class Chatbot:
     """
@@ -385,35 +382,42 @@ class Chatbot:
         """
         ops, feedDict = self.model.step(batch)
 
-        numBeams = 10
-        beams = [Beam([self.textData.goToken], 0)]
+        numBeams = 5
+        nextProbs = self.sess.run(ops[0][0], feedDict)[0]
+        beams = [Beam([self.textData.goToken], 0, nextProbs, self.textData)]
 
         finished = False
         while not finished:
             finished = True
             newBeams = []
             for beam in beams:
-                if beam.words[-1] == self.textData.eosToken:
+                numCurrentWords = len(beam.words)
+                if numCurrentWords >= len(ops[0]) or beam.words[-1] == self.textData.eosToken:
                     newBeams.append(beam)
                 else:
                     finished = False
                     for i, word in enumerate(beam.words):
                         feedDict[self.model.decoderInputs[i]] = [word]
 
-                    nextProbs = self.sess.run(ops[0][len(beam.words) - 1], feedDict)[0]
-                    bestWords = np.argpartition(nextProbs, -numBeams)[-numBeams:]
+                    currentProbs = beam.nextProbs
+                    bestWords = np.argpartition(currentProbs, -numBeams)[-numBeams:]
                     for word in bestWords:
+                        feedDict[self.model.decoderInputs[numCurrentWords]] = [word]
+                        if word == self.textData.eosToken:
+                            nextProbs = [0] * self.textData.eosToken
+                        else:
+                            nextProbs = self.sess.run(ops[0][numCurrentWords], feedDict)[0]
                         newWords = copy.copy(beam.words)
                         newWords.append(word)
-                        newBeam = Beam(newWords, beam.prob + nextProbs[word])
+                        newBeam = Beam(newWords, beam.prob + currentProbs[word], nextProbs, self.textData)
                         newBeams.append(newBeam)
-            probs = [beam.prob for beam in newBeams]
+            probs = [beam.prob + beam.nextProbs[self.textData.eosToken] for beam in newBeams]
             keepProbIndices = np.argpartition(probs, -numBeams)[-numBeams:]
             beams = []
             for probIndex in keepProbIndices:
                 beams.append(newBeams[probIndex])
 
-        bestBeam = max(beams, key=lambda beam: beam.prob)
+        bestBeam = max(beams, key=lambda beam: beam.prob + beam.nextProbs[self.textData.eosToken])
 
         return bestBeam.words
 
@@ -707,3 +711,28 @@ class Chatbot:
         else:
             print('Warning: Error in the device name: {}, use the default device'.format(self.args.device))
             return None
+
+class Beam(object):
+    """
+    Keeps track of a certain beam in beam search.
+    """
+
+    def __init__(self, words: List[int], prob: float, nextProbs: List[float], textData):
+        """ Initializes a beam.
+        Args:
+            words: A list of word indices that the beam currently contains for its response.
+            prob: The current log-probability sum of the beam's words.
+            nextProbs: The log-probabilities of all vocabulary words in the next step of the sentence.
+            textData: Stores a mapping from word indices to words.
+        """
+        self.words = words
+        self.prob = prob
+        self.nextProbs = nextProbs
+        self.textData = textData
+
+    def __repr__(self) -> str:
+        """ Convert the current working word indices into words in a sentence.
+        Return:
+            A sentence from the current word indices.
+        """
+        return self.textData.sequence2str(self.words, clean=True) + " (" + str(self.prob) + ")"
