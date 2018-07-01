@@ -27,6 +27,7 @@ import tensorflow as tf
 import numpy as np
 import math
 import copy
+import random
 from typing import List
 
 from tqdm import tqdm  # Progress bar
@@ -322,7 +323,7 @@ class Chatbot:
 
         print('Testing: Launch interactive mode:')
         print('')
-        print('Welcome to the interactive mode, here you can ask to Deep Q&A the sentence you want. Don\'t have high '
+        print('Welcome to the interactive mode. Here you can ask to Deep Q&A the sentence you want. Don\'t have high '
               'expectation. Type \'exit\' or just press ENTER to quit the program. Have fun.')
 
         while True:
@@ -382,7 +383,8 @@ class Chatbot:
         """
         ops, feedDict = self.model.step(batch)
 
-        numBeams = 5
+        numBeams = 10
+        numBranches = 3
         nextProbs = self.sess.run(ops[0][0], feedDict)[0]
         beams = [Beam([self.textData.goToken], 0, nextProbs, self.textData)]
 
@@ -400,24 +402,27 @@ class Chatbot:
                         feedDict[self.model.decoderInputs[i]] = [word]
 
                     currentProbs = beam.nextProbs
-                    bestWords = np.argpartition(currentProbs, -numBeams)[-numBeams:]
+                    bestWords = np.argpartition(currentProbs, -numBranches)[-numBranches:]
                     for word in bestWords:
                         feedDict[self.model.decoderInputs[numCurrentWords]] = [word]
                         if word == self.textData.eosToken:
-                            nextProbs = [0] * self.textData.eosToken
+                            nextProbs = [0] * (self.textData.eosToken + 1)
                         else:
                             nextProbs = self.sess.run(ops[0][numCurrentWords], feedDict)[0]
                         newWords = copy.copy(beam.words)
                         newWords.append(word)
                         newBeam = Beam(newWords, beam.prob + currentProbs[word], nextProbs, self.textData)
                         newBeams.append(newBeam)
-            probs = [beam.prob + beam.nextProbs[self.textData.eosToken] for beam in newBeams]
-            keepProbIndices = np.argpartition(probs, -numBeams)[-numBeams:]
+
+            probs = [beam.endProb for beam in newBeams]
+            numCurrentBeams = min(numBeams, len(probs))
+            keepProbIndices = np.argpartition(probs, -numCurrentBeams)[-numCurrentBeams:]
             beams = []
             for probIndex in keepProbIndices:
                 beams.append(newBeams[probIndex])
 
-        bestBeam = max(beams, key=lambda beam: beam.prob + beam.nextProbs[self.textData.eosToken])
+        weights = [math.exp(beam.endProb) for beam in beams]
+        bestBeam = random.choices(beams, weights)[0]
 
         return bestBeam.words
 
@@ -730,9 +735,19 @@ class Beam(object):
         self.nextProbs = nextProbs
         self.textData = textData
 
+    @property
+    def endProb(self):
+        """ Gets the current probability of the beam combined with the probability of it ending.
+        Return:
+            The current probability of the beam combined with the probability of it ending.
+        """
+        return self.prob + self.nextProbs[self.textData.eosToken]
+
+
+
     def __repr__(self) -> str:
         """ Convert the current working word indices into words in a sentence.
         Return:
             A sentence from the current word indices.
         """
-        return self.textData.sequence2str(self.words, clean=True) + " (" + str(self.prob) + ")"
+        return self.textData.sequence2str(self.words, clean=True) + " (" + str(self.endProb) + ")"
