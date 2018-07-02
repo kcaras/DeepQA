@@ -27,11 +27,11 @@ import random
 import string
 import collections
 
-from chatbot.corpus.cornelldata import CornellData
-from chatbot.corpus.opensubsdata import OpensubsData
-from chatbot.corpus.scotusdata import ScotusData
-from chatbot.corpus.ubuntudata import UbuntuData
-from chatbot.corpus.lightweightdata import LightweightData
+from .corpus.cornelldata import CornellData
+from .corpus.opensubsdata import OpensubsData
+from .corpus.scotusdata import ScotusData
+from .corpus.ubuntudata import UbuntuData
+from .corpus.lightweightdata import LightweightData
 
 
 class Batch:

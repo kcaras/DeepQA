@@ -28,13 +28,16 @@ import numpy as np
 import math
 import copy
 import random
+from types import LambdaType
 from typing import List
 
 from tqdm import tqdm  # Progress bar
 from tensorflow.python import debug as tf_debug
 
-from chatbot.textdata import Batch, TextData
-from chatbot.model import Model
+from .textdata import Batch, TextData
+from .model import Model
+
+import utils.word_manipulation as word_manipulation
 
 class Chatbot:
     """
@@ -166,6 +169,8 @@ class Chatbot:
         if self.args.createDataset:
             print('Dataset created! Thanks for using this program')
             return  # No need to go further
+
+        self.loadHumorValues()
 
         # Prepare the model
         with tf.device(self.getDevice()):
@@ -414,12 +419,8 @@ class Chatbot:
                         newBeam = Beam(newWords, beam.prob + currentProbs[word], nextProbs, self.textData)
                         newBeams.append(newBeam)
 
-            probs = [beam.endProb for beam in newBeams]
-            numCurrentBeams = min(numBeams, len(probs))
-            keepProbIndices = np.argpartition(probs, -numCurrentBeams)[-numCurrentBeams:]
-            beams = []
-            for probIndex in keepProbIndices:
-                beams.append(newBeams[probIndex])
+            numCurrentBeams = min(numBeams, len(newBeams))
+            beams = selectBestSubset(newBeams, numCurrentBeams, lambda beam: beam.endProb)
 
         weights = [math.exp(beam.endProb) for beam in beams]
         bestBeam = random.choices(beams, weights)[0]
@@ -444,6 +445,19 @@ class Chatbot:
         print('Exiting the daemon mode...')
         self.sess.close()
         print('Daemon closed.')
+
+    def loadHumorValues(self):
+        """ Initialize humor words data set.
+        """
+        humorPercentile = 0.8
+
+        self.humorDict = word_manipulation.build_word_humor_values()
+        fullList = [entry for entry in self.humorDict.items()]
+        numHumorWords = int((1 - humorPercentile) * len(fullList))
+
+        humorList = selectBestSubset(fullList, numHumorWords, lambda entry: entry[1])
+        self.humorSet = {entry[0] for entry in humorList}
+        pass
 
     def loadEmbedding(self, sess):
         """ Initialize embeddings with pre-trained word2vec vectors
@@ -743,11 +757,25 @@ class Beam(object):
         """
         return self.prob + self.nextProbs[self.textData.eosToken]
 
-
-
     def __repr__(self) -> str:
         """ Convert the current working word indices into words in a sentence.
         Return:
             A sentence from the current word indices.
         """
         return self.textData.sequence2str(self.words, clean=True) + " (" + str(self.endProb) + ")"
+
+def selectBestSubset(population: List, numSelect: int, valueFunc: LambdaType) -> List:
+    """ Selects a fixed amount of the highest valued individuals from a population.
+    Args:
+        population: The initial population to select from.
+        numSelect: The number of individuals to select.
+        lambdaFunc: A function to value each individual by.
+    Returns:
+        A fixed amount of the highest valued individuals from a population.
+    """
+    values = [valueFunc(ind) for ind in population]
+    keepIndices = np.argpartition(values, -numSelect)[-numSelect:]
+    subset = []
+    for index in keepIndices:
+        subset.append(population[index])
+    return subset
