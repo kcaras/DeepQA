@@ -161,6 +161,7 @@ class Chatbot:
         self.loadModelParams()  # Update the self.modelDir and self.globStep, for now, not used when loading Model (but need to be called before _getSummaryName)
 
         self.textData = TextData(self.args)
+        self.defaultProbs = [0] * len(self.textData.word2id)
         # TODO: Add a mode where we can force the input of the decoder // Try to visualize the predictions for
         # each word of the vocabulary / decoder input
         # TODO: For now, the model are trained for a specific dataset (because of the maxLength which define the
@@ -411,9 +412,11 @@ class Chatbot:
                     for word in bestWords:
                         feedDict[self.model.decoderInputs[numCurrentWords]] = [word]
                         if word == self.textData.eosToken:
-                            nextProbs = [0] * (self.textData.eosToken + 1)
+                            nextProbs = self.defaultProbs
                         else:
                             nextProbs = self.sess.run(ops[0][numCurrentWords], feedDict)[0]
+                            for wordIndex in self.humorSet:
+                                nextProbs[wordIndex] += 5
                         newWords = copy.copy(beam.words)
                         newWords.append(word)
                         newBeam = Beam(newWords, beam.prob + currentProbs[word], nextProbs, self.textData)
@@ -451,13 +454,21 @@ class Chatbot:
         """
         humorPercentile = 0.8
 
-        self.humorDict = word_manipulation.build_word_humor_values()
-        fullList = [entry for entry in self.humorDict.items()]
-        numHumorWords = int((1 - humorPercentile) * len(fullList))
+        self.humorDict = {}
+        humorDictWords = word_manipulation.build_word_humor_values()
+        wordList = []
+        for word, value in humorDictWords.items():
+            if word in self.textData.word2id:
+                wordIndex = self.textData.word2id[word]
+                self.humorDict[wordIndex] = value
+                wordList.append((wordIndex, value))
 
-        humorList = selectBestSubset(fullList, numHumorWords, lambda entry: entry[1])
-        self.humorSet = {entry[0] for entry in humorList}
-        pass
+        numHumorWords = int((1 - humorPercentile) * len(wordList))
+
+        humorList = selectBestSubset(wordList, numHumorWords, lambda entry: entry[1])
+        self.humorSet = set()
+        for wordIndex in humorList:
+            self.humorSet.add(wordIndex[0])
 
     def loadEmbedding(self, sess):
         """ Initialize embeddings with pre-trained word2vec vectors
