@@ -417,8 +417,8 @@ class Chatbot:
                             nextProbs = self.defaultProbs
                         else:
                             nextProbs = self.sess.run(ops[0][numCurrentWords], feedDict)[0]
-                            for wordIndex in self.humorSet:
-                                nextProbs[wordIndex] += 5
+                            # for wordIndex in self.humorSet:
+                            #     nextProbs[wordIndex] += 5
                         newWords = copy.copy(beam.words)
                         newWords.append(word)
                         newBeam = Beam(newWords, beam.prob + currentProbs[word], nextProbs, self.textData)
@@ -755,7 +755,7 @@ class Chatbot:
         wordIndices = self.singlePredict(user_input)
         answer = self.makeCleanSentence(wordIndices)
         if print_response:
-            print(answer, end='')
+            print(answer)
         return answer
 
 class Beam(object):
