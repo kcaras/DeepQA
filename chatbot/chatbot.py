@@ -23,16 +23,17 @@ import argparse  # Command line parsing
 import configparser  # Saving the models parameters
 import datetime  # Chronometer
 import os  # Files management
-import tensorflow as tf
-import numpy as np
 import math
 import copy
 import random
 from types import LambdaType
 from typing import List
 
-from tqdm import tqdm  # Progress bar
+import tensorflow as tf
 from tensorflow.python import debug as tf_debug
+import numpy as np
+
+from tqdm import tqdm  # Progress bar
 
 from .textdata import Batch, TextData
 from .model import Model
@@ -51,7 +52,7 @@ class Chatbot:
         INTERACTIVE = 'interactive'  # The user can write his own questions
         DAEMON = 'daemon'  # The chatbot runs on background and can regularly be called to predict something
 
-    def __init__(self):
+    def __init__(self, sess: tf.Session=None):
         """
         """
         # Model/dataset parameters
@@ -68,7 +69,7 @@ class Chatbot:
         self.globStep = 0  # Represent the number of iteration for the current model
 
         # TensorFlow main session (we keep track for the daemon)
-        self.sess = None
+        self.sess = sess
 
         # Filename and directories constants
         self.MODEL_DIR_BASE = 'save' + os.sep + 'model'
@@ -139,7 +140,7 @@ class Chatbot:
         trainingArgs.add_argument('--learningRate', type=float, default=0.002, help='Learning rate')
         trainingArgs.add_argument('--dropout', type=float, default=0.9, help='Dropout rate (keep probabilities)')
 
-        return parser.parse_args(args)
+        return parser.parse_known_args(args)[0]
 
     def main(self, args=None):
         """
@@ -187,14 +188,15 @@ class Chatbot:
         # Also fix seed for random.shuffle (does it works globally for all files ?)
 
         # Running session
-        self.sess = tf.Session(config=tf.ConfigProto(
-            allow_soft_placement=True,  # Allows backup device for non GPU-available operations (when forcing GPU)
-            log_device_placement=False)  # Too verbose ?
-        )  # TODO: Replace all sess by self.sess (not necessary a good idea) ?
+        if not self.sess:
+            self.sess = tf.Session(config=tf.ConfigProto(
+                allow_soft_placement=True,  # Allows backup device for non GPU-available operations (when forcing GPU)
+                log_device_placement=False)  # Too verbose ?
+            )  # TODO: Replace all sess by self.sess (not necessary a good idea) ?
 
-        if self.args.debug:
-            self.sess = tf_debug.LocalCLIDebugWrapperSession(self.sess)
-            self.sess.add_tensor_filter("has_inf_or_nan", tf_debug.has_inf_or_nan)
+            if self.args.debug:
+                self.sess = tf_debug.LocalCLIDebugWrapperSession(self.sess)
+                self.sess.add_tensor_filter("has_inf_or_nan", tf_debug.has_inf_or_nan)
 
         print('Initialize variables...')
         self.sess.run(tf.global_variables_initializer())
@@ -742,6 +744,20 @@ class Chatbot:
             print('Warning: Error in the device name: {}, use the default device'.format(self.args.device))
             return None
 
+    def respond(self, user_input: str, print_response: bool=True):
+        """ Responds to a message from the user.
+        Args:
+            user_input: The message sent by the user.
+            print_response: Whether the response will be printed to the console.
+        Returns:
+            The chatbot's response to the user message.
+        """
+        wordIndices = self.singlePredict(user_input)
+        answer = self.makeCleanSentence(wordIndices)
+        if print_response:
+            print(answer, end='')
+        return answer
+
 class Beam(object):
     """
     Keeps track of a certain beam in beam search.
@@ -774,6 +790,17 @@ class Beam(object):
             A sentence from the current word indices.
         """
         return self.textData.sequence2str(self.words, clean=True) + " (" + str(self.endProb) + ")"
+
+def get_chatbot(sess: tf.Session) -> Chatbot:
+    """ Gets a new instance of the chatbot.
+    Args:
+        sess: The TensorFlow session to use for the chatbot.
+    Returns:
+        A new instance of the chatbot.
+    """
+    newChatbot = Chatbot(sess)
+    newChatbot.main()
+    return newChatbot
 
 def selectBestSubset(population: List, numSelect: int, valueFunc: LambdaType) -> List:
     """ Selects a fixed amount of the highest valued individuals from a population.
