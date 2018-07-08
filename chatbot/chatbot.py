@@ -81,6 +81,8 @@ class Chatbot:
         self.TEST_OUT_SUFFIX = '_predictions.txt'
         self.SENTENCES_PREFIX = ['Q: ', 'A: ']
 
+        self.humorProb = False
+
     @staticmethod
     def parseArgs(args):
         """
@@ -417,8 +419,9 @@ class Chatbot:
                             nextProbs = self.defaultProbs
                         else:
                             nextProbs = self.sess.run(ops[0][numCurrentWords], feedDict)[0]
-                            # for wordIndex in self.humorSet:
-                            #     nextProbs[wordIndex] += 5
+                            if self.humorProb:
+                                for wordIndex in self.humorSet:
+                                    nextProbs[wordIndex] += 5
                         newWords = copy.copy(beam.words)
                         newWords.append(word)
                         newBeam = Beam(newWords, beam.prob + currentProbs[word], nextProbs, self.textData)
