@@ -212,6 +212,11 @@ class Model:
             )
             self.optOp = opt.minimize(self.lossFct)
 
+        for var in tf.trainable_variables():
+            if var.name == 'embedding_rnn_seq2seq/embedding_rnn_decoder/embedding:0':
+                self.encoderOutputs = var
+                break
+
     def step(self, batch):
         """ Forward/training step operation.
         Does not perform run on itself but just return the operators to do so. Those have then to be run

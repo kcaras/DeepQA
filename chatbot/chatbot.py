@@ -81,8 +81,6 @@ class Chatbot:
         self.TEST_OUT_SUFFIX = '_predictions.txt'
         self.SENTENCES_PREFIX = ['Q: ', 'A: ']
 
-        self.humorProb = False
-
     @staticmethod
     def parseArgs(args):
         """
@@ -114,6 +112,7 @@ class Chatbot:
         globalArgs.add_argument('--autoEncode', action='store_true', help='Randomly pick the question or the answer and use it both as input and output')
         globalArgs.add_argument('--device', type=str, default=None, help='\'gpu\' or \'cpu\' (Warning: make sure you have enough free RAM), allow to choose on which hardware run the model')
         globalArgs.add_argument('--seed', type=int, default=None, help='random seed for replication')
+        globalArgs.add_argument('--humorProb', action='store_true')
 
         # Dataset options
         datasetArgs = parser.add_argument_group('Dataset options')
@@ -155,6 +154,8 @@ class Chatbot:
         # General initialisation
 
         self.args = self.parseArgs(args)
+        self.humorProb = self.args.humorProb
+        print(self.humorProb)
 
         if not self.args.rootDir:
             self.args.rootDir = os.getcwd()  # Use the current working directory
@@ -210,6 +211,8 @@ class Chatbot:
         # Initialize embeddings with pre-trained word2vec vectors
         if self.args.initEmbeddings:
             self.loadEmbedding(self.sess)
+
+        self.embeddings = self.sess.run(self.model.encoderOutputs)
 
         if self.args.test:
             if self.args.test == Chatbot.TestMode.INTERACTIVE:
@@ -362,7 +365,24 @@ class Chatbot:
         Return:
             A sentence corresponding to the word indices.
         """
-        return self.textData.sequence2str(answer, clean=True)
+        rawSentence = self.textData.sequence2str(answer, clean=True)
+
+        rawSentence = rawSentence.replace(' .', '.')
+
+        if self.humorProb:
+            hasHumorWord = False
+            for wordIndex in answer:
+                if wordIndex in self.humorSet:
+                    hasHumorWord = True
+                    break
+
+            if hasHumorWord:
+                if rawSentence.endswith('...') or rawSentence.endswith(' --'):
+                    rawSentence = rawSentence[:-3] + '!'
+                elif rawSentence.endswith('.') or rawSentence.endswith('-'):
+                    rawSentence = rawSentence[:-1] + '!'
+
+        return rawSentence
 
     def singlePredict(self, question, questionSeq=None):
         """ Predict the sentence
@@ -396,7 +416,7 @@ class Chatbot:
         numBeams = 10
         numBranches = 3
         nextProbs = self.sess.run(ops[0][0], feedDict)[0]
-        beams = [Beam([self.textData.goToken], 0, nextProbs, self.textData)]
+        beams = [Beam([self.textData.goToken], 0, nextProbs, self)]
 
         finished = False
         while not finished:
@@ -420,11 +440,12 @@ class Chatbot:
                         else:
                             nextProbs = self.sess.run(ops[0][numCurrentWords], feedDict)[0]
                             if self.humorProb:
+                                # Increase the probability of words considered humorous.
                                 for wordIndex in self.humorSet:
                                     nextProbs[wordIndex] += 5
                         newWords = copy.copy(beam.words)
                         newWords.append(word)
-                        newBeam = Beam(newWords, beam.prob + currentProbs[word], nextProbs, self.textData)
+                        newBeam = Beam(newWords, beam.prob + currentProbs[word], nextProbs, self)
                         newBeams.append(newBeam)
 
             numCurrentBeams = min(numBeams, len(newBeams))
@@ -520,7 +541,7 @@ class Chatbot:
                     elif embeddings_format == 'vec':
                         vector = np.fromstring(f.readline(), sep=' ', dtype='float32')
                     else:
-                        raise Exception("Unkown format for embeddings: %s " % embeddings_format)
+                        raise Exception("Unknown format for embeddings: %s " % embeddings_format)
                     initW[self.textData.word2id[word]] = vector
                 else:
                     if embeddings_format == 'bin':
@@ -528,7 +549,7 @@ class Chatbot:
                     elif embeddings_format == 'vec':
                         f.readline()
                     else:
-                        raise Exception("Unkown format for embeddings: %s " % embeddings_format)
+                        raise Exception("Unknown format for embeddings: %s " % embeddings_format)
 
         # PCA Decomposition to reduce word2vec dimensionality
         if self.args.embeddingSize < vector_size:
@@ -766,18 +787,18 @@ class Beam(object):
     Keeps track of a certain beam in beam search.
     """
 
-    def __init__(self, words: List[int], prob: float, nextProbs: List[float], textData):
+    def __init__(self, words: List[int], prob: float, nextProbs: List[float], chatbot):
         """ Initializes a beam.
         Args:
             words: A list of word indices that the beam currently contains for its response.
             prob: The current log-probability sum of the beam's words.
             nextProbs: The log-probabilities of all vocabulary words in the next step of the sentence.
-            textData: Stores a mapping from word indices to words.
+            chatbot: The chatbot using the beam for search.
         """
         self.words = words
         self.prob = prob
         self.nextProbs = nextProbs
-        self.textData = textData
+        self.chatbot = chatbot
 
     @property
     def endProb(self):
@@ -785,7 +806,10 @@ class Beam(object):
         Return:
             The current probability of the beam combined with the probability of it ending.
         """
-        return self.prob + self.nextProbs[self.textData.eosToken]
+        if self.chatbot.humorProb:
+            return self.prob
+        else:
+            return self.prob + self.nextProbs[self.chatbot.textData.eosToken]
 
     def __repr__(self) -> str:
         """ Convert the current working word indices into words in a sentence.
