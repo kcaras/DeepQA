@@ -176,6 +176,7 @@ class Chatbot:
             return  # No need to go further
 
         self.loadHumorValues()
+        self.starterLines = word_manipulation.get_starter_lines()
 
         # Prepare the model
         with tf.device(self.getDevice()):
@@ -369,7 +370,7 @@ class Chatbot:
 
         rawSentence = rawSentence.replace(' .', '.')
 
-        if self.humorProb:
+        if self.humorProb and answer:
             hasHumorWord = False
             for wordIndex in answer:
                 if wordIndex in self.humorSet:
@@ -415,8 +416,10 @@ class Chatbot:
 
         numBeams = 10
         numBranches = 3
+
+        startBeamWords = [self.textData.goToken]
         nextProbs = self.sess.run(ops[0][0], feedDict)[0]
-        beams = [Beam([self.textData.goToken], 0, nextProbs, self)]
+        beams = [Beam(startBeamWords, 0, nextProbs, self)]
 
         finished = False
         while not finished:
@@ -451,7 +454,12 @@ class Chatbot:
             numCurrentBeams = min(numBeams, len(newBeams))
             beams = selectBestSubset(newBeams, numCurrentBeams, lambda beam: beam.endProb)
 
-        weights = [math.exp(beam.endProb) for beam in beams]
+        # Use log probabilities directly to have more variety in answers.
+        weights = [max(0, 100 + beam.endProb) ** 2 for beam in beams]
+        if max(weights) == 0:
+            minWeight = min([beam.endProb for beam in beams])
+            weights = [(-minWeight + beam.endProb) ** 2 for beam in beams]
+
         bestBeam = random.choices(beams, weights)[0]
 
         return bestBeam.words
@@ -781,6 +789,14 @@ class Chatbot:
         if print_response:
             print(answer)
         return answer
+
+    def getRandomStarter(self) -> str:
+        """ Returns a random starter sentence for a conversation.
+        Returns:
+            A random starter sentence for a conversation.
+        """
+        return random.choice(self.starterLines)
+
 
 class Beam(object):
     """
