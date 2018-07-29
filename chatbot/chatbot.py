@@ -788,6 +788,15 @@ class Chatbot:
         answer = self.makeCleanSentence(wordIndices)
         if print_response:
             print(answer)
+
+            if self.humorProb:
+                # Show the normal response as a comparison.
+                self.humorProb = False
+                wordIndices = self.singlePredict(user_input)
+                normalAnswer = self.makeCleanSentence(wordIndices)
+                self.humorProb = True
+
+                print('(Normal:', normalAnswer + ')')
         return answer
 
     def getRandomStarter(self) -> str:

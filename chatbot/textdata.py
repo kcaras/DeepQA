@@ -556,11 +556,21 @@ class TextData:
         Return:
             str: the sentence
         """
-        return ''.join([
+        sentence = ''.join([
             ' ' + t if not t.startswith('\'') and
                        t not in string.punctuation
                     else t
             for t in tokens]).strip().capitalize()
+
+        sentence = sentence.replace(' i ', ' I ')
+        sentence = sentence.replace(' i...', ' I...')
+        sentence = sentence.replace(" i'", " I'")
+        sentence = sentence.replace(' gon na ', ' gonna ')
+        sentence = sentence.replace(' got ta ', ' gotta ')
+        sentence = sentence.replace(' wan na ', ' wanna ')
+        sentence = sentence.replace(" n't", "n't")
+
+        return sentence
 
     def batchSeq2str(self, batchSeq, seqId=0, **kwargs):
         """Convert a list of integer into a human readable string.
