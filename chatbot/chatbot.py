@@ -152,7 +152,6 @@ class Chatbot:
         print('TensorFlow detected: v{}'.format(tf.__version__))
 
         # General initialisation
-
         self.args = self.parseArgs(args)
         self.humorProb = self.args.humorProb
         print(self.humorProb)
@@ -490,6 +489,12 @@ class Chatbot:
 
         self.humorDict = {}
         humorDictWords = word_manipulation.build_word_humor_values()
+
+        if self.outer_args.reduce_swear:
+            swearWords = ['ass', 'cock', 'damn', 'fuck', 'screw', 'shit']
+            for swearWord in swearWords:
+                del humorDictWords[swearWord]
+
         wordList = []
         for word, value in humorDictWords.items():
             if word in self.textData.word2id:
@@ -776,11 +781,12 @@ class Chatbot:
             print('Warning: Error in the device name: {}, use the default device'.format(self.args.device))
             return None
 
-    def respond(self, user_input: str, print_response: bool=True):
+    def respond(self, user_input: str, print_response: bool = True, show_other: bool = True):
         """ Responds to a message from the user.
         Args:
             user_input: The message sent by the user.
             print_response: Whether the response will be printed to the console.
+            show_other: Whether to show the other chatbot's would-be response.
         Returns:
             The chatbot's response to the user message.
         """
@@ -789,14 +795,20 @@ class Chatbot:
         if print_response:
             print(answer)
 
-            if self.humorProb:
-                # Show the normal response as a comparison.
-                self.humorProb = False
-                wordIndices = self.singlePredict(user_input)
-                normalAnswer = self.makeCleanSentence(wordIndices)
-                self.humorProb = True
+            if self.outer_args.debug_print and show_other:
+                # Show the response of the other chatbot as a comparison.
+                origHumorProb = self.humorProb
+                if self.humorProb:
+                    otherName = 'Normal'
+                else:
+                    otherName = 'HumorProb'
 
-                print('(Normal:', normalAnswer + ')')
+                self.humorProb = not origHumorProb
+                wordIndices = self.singlePredict(user_input)
+                otherAnswer = self.makeCleanSentence(wordIndices)
+                self.humorProb = origHumorProb
+
+                print('(' + otherName + ':', otherAnswer + ')')
         return answer
 
     def getRandomStarter(self) -> str:
@@ -843,14 +855,16 @@ class Beam(object):
         """
         return self.textData.sequence2str(self.words, clean=True) + " (" + str(self.endProb) + ")"
 
-def get_chatbot(sess: tf.Session) -> Chatbot:
+def get_chatbot(sess: tf.Session, args: argparse.Namespace) -> Chatbot:
     """ Gets a new instance of the chatbot.
     Args:
         sess: The TensorFlow session to use for the chatbot.
+        args: The command line arguments.
     Returns:
         A new instance of the chatbot.
     """
     newChatbot = Chatbot(sess)
+    newChatbot.outer_args = args
     newChatbot.main()
     return newChatbot
 
