@@ -56,7 +56,7 @@ class LightweightData:
         """
 
         linesBuffer = []
-        with open(fileName, 'r') as f:
+        with open(fileName, 'r', encoding="latin-1") as f:
             for line in f:
                 l = line.strip()
                 if l == self.CONVERSATION_SEP:
