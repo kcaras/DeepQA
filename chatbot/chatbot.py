@@ -441,10 +441,10 @@ class Chatbot:
                             nextProbs = self.defaultProbs
                         else:
                             nextProbs = self.sess.run(ops[0][numCurrentWords], feedDict)[0]
-                            if self.humorProb:
-                                # Increase the probability of words considered humorous.
-                                for wordIndex in self.humorSet:
-                                    nextProbs[wordIndex] += 5
+                            #if self.humorProb:
+                            #    # Increase the probability of words considered humorous.
+                            #    for wordIndex in self.humorSet:
+                            #        nextProbs[wordIndex] += 5
                         newWords = copy.copy(beam.words)
                         newWords.append(word)
                         newBeam = Beam(newWords, beam.prob + currentProbs[word], nextProbs, self)
